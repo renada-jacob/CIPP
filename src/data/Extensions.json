@@ -403,7 +403,7 @@
         "type": "switch",
         "name": "HaloPSA.ConsolidateTickets",
         "label": "Consolidate Tickets",
-        "helperText": "Append repeat alerts as a note to the existing open ticket instead of creating a new one. Reveals the Outcome dropdown.",
+        "helperText": "Append repeat alerts as a note to the existing open ticket instead of creating a new one.",
         "condition": {
           "field": "HaloPSA.TicketType",
           "compareType": "hasValue",
