@@ -390,7 +390,7 @@
           "queryKey": "HaloPriorities",
           "dataKey": "Priorities",
           "labelField": "name",
-          "valueField": "id",
+          "valueField": "priorityid",
           "showRefresh": true
         },
         "condition": {
