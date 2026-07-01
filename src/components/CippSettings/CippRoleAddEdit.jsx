@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import {
   Box,
@@ -15,8 +15,8 @@ import {
 
 import { Grid } from "@mui/system";
 import { ApiGetCall, ApiGetCallWithPagination, ApiPostCall } from "../../api/ApiCall";
-import { CippOffCanvas } from "/src/components/CippComponents/CippOffCanvas";
-import { CippFormTenantSelector } from "/src/components/CippComponents/CippFormTenantSelector";
+import { CippOffCanvas } from "../CippComponents/CippOffCanvas";
+import { CippFormTenantSelector } from "../CippComponents/CippFormTenantSelector";
 import { Save, WarningOutlined } from "@mui/icons-material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import CippFormComponent from "../CippComponents/CippFormComponent";
@@ -46,6 +46,12 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
   const formState = useFormState({ control: formControl.control });
 
   const validateRoleName = (value) => {
+    const alphaNumRegex = /^[A-Za-z0-9]+$/;
+
+    if (!alphaNumRegex.test(value)) {
+      return "Role name must contain only letters and numbers, no spaces or special characters";
+    }
+
     if (
       customRoleList?.pages?.[0]?.some(
         (role) => role?.RowKey?.toLowerCase() === value?.toLowerCase()
@@ -62,6 +68,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
   const setDefaults = useWatch({ control: formControl.control, name: "Defaults" });
   const selectedPermissions = useWatch({ control: formControl.control, name: "Permissions" });
   const selectedEntraGroup = useWatch({ control: formControl.control, name: "EntraGroup" });
+  const ipRanges = useWatch({ control: formControl.control, name: "IPRange" });
 
   const {
     data: apiPermissions = [],
@@ -81,15 +88,37 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
     queryKey: "customRoleList",
   });
 
-  const { data: { pages = [] } = {}, isSuccess: tenantsSuccess } = ApiGetCallWithPagination({
+  const {
+    data: { pages = [] } = {},
+    isSuccess: tenantsSuccess,
+    isFetching: tenantsFetching,
+  } = ApiGetCallWithPagination({
     url: "/api/ListTenants?AllTenantSelector=true",
-    queryKey: "ListTenants-AllTenantSelector",
+    queryKey: "ListTenants-All",
   });
   const tenants = pages[0] || [];
 
   const matchPattern = (pattern, value) => {
     const regex = new RegExp(`^${pattern.replace("*", ".*")}$`);
     return regex.test(value);
+  };
+
+  const getFunctionDescriptionText = (description) => {
+    if (!description) return null;
+
+    if (Array.isArray(description)) {
+      return description?.[0]?.Text || description?.[0]?.text || null;
+    }
+
+    if (typeof description === "string") {
+      return description;
+    }
+
+    if (typeof description === "object") {
+      return description?.Text || description?.text || null;
+    }
+
+    return null;
   };
 
   const getBaseRolePermissions = (role) => {
@@ -163,7 +192,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
           });
         } else {
           // Handle tenant customer IDs (legacy format)
-          var tenantInfo = tenants.find((t) => t.customerId === item);
+          var tenantInfo = tenants.find((t) => t?.customerId === item);
           if (tenantInfo?.displayName) {
             var label = `${tenantInfo.displayName} (${tenantInfo.defaultDomainName})`;
             newAllowedTenants.push({
@@ -192,7 +221,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
           });
         } else {
           // Handle tenant customer IDs (legacy format)
-          var tenantInfo = tenants.find((t) => t.customerId === item);
+          var tenantInfo = tenants.find((t) => t?.customerId === item);
           if (tenantInfo?.displayName) {
             var label = `${tenantInfo.displayName} (${tenantInfo.defaultDomainName})`;
             newBlockedTenants.push({
@@ -234,6 +263,13 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
           value: endpoint,
         })) || [];
 
+      // Process IP ranges
+      const processedIPRanges =
+        currentPermissions?.IPRange?.map((ip) => ({
+          label: ip,
+          value: ip,
+        })) || [];
+
       formControl.reset({
         Permissions:
           basePermissions && Object.keys(basePermissions).length > 0
@@ -243,6 +279,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
         allowedTenants: newAllowedTenants,
         blockedTenants: newBlockedTenants,
         BlockedEndpoints: processedBlockedEndpoints,
+        IPRange: processedIPRanges,
         EntraGroup: currentPermissions?.EntraGroup,
       });
     }
@@ -334,6 +371,11 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
         return endpoint.value || endpoint;
       }) || [];
 
+    const processedIPRanges =
+      ipRanges?.map((ip) => {
+        return ip?.value || ip;
+      }) || [];
+
     updatePermissions.mutate({
       url: "/api/ExecCustomRole?Action=AddUpdate",
       data: {
@@ -343,19 +385,20 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
         AllowedTenants: processedAllowedTenants,
         BlockedTenants: processedBlockedTenants,
         BlockedEndpoints: processedBlockedEndpoints,
+        IPRange: processedIPRanges,
       },
     });
   };
 
   const ApiPermissionRow = ({ obj, cat, readOnly }) => {
     const [offcanvasVisible, setOffcanvasVisible] = useState(false);
+    const [descriptionOffcanvasVisible, setDescriptionOffcanvasVisible] = useState(false);
+    const [selectedDescription, setSelectedDescription] = useState({ name: "", description: "" });
 
-    var items = [];
-    for (var key in apiPermissions[cat][obj])
-      for (var key2 in apiPermissions[cat][obj][key]) {
-        items.push({ heading: "", content: apiPermissions[cat][obj][key][key2] });
-      }
-    var group = [{ items: items }];
+    const handleDescriptionClick = (name, description) => {
+      setSelectedDescription({ name, description });
+      setDescriptionOffcanvasVisible(true);
+    };
 
     return (
       <Stack
@@ -392,41 +435,66 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
             disabled={readOnly}
           />
         </Stack>
+        {/* Main offcanvas */}
         <CippOffCanvas
           visible={offcanvasVisible}
-          onClose={() => {
-            setOffcanvasVisible(false);
-          }}
+          onClose={() => setOffcanvasVisible(false)}
+          title={`${cat}.${obj} Endpoints`}
         >
           <Stack spacing={2}>
-            <Typography variant="h3" sx={{ mx: 3 }}>
-              {`${cat}.${obj}`}
-            </Typography>
             <Typography variant="body1" sx={{ mx: 3 }}>
-              Listed below are the available API endpoints based on permission level, ReadWrite
+              Listed below are the available API endpoints based on permission level. ReadWrite
               level includes endpoints under Read.
             </Typography>
-            {[apiPermissions[cat][obj]].map((permissions, key) => {
-              var sections = Object.keys(permissions).map((type) => {
-                var items = [];
-                for (var api in permissions[type]) {
-                  items.push({ heading: "", content: permissions[type][api] });
-                }
-                return (
-                  <Stack key={key} spacing={2}>
-                    <Typography variant="h4">{type}</Typography>
-                    <Stack spacing={1}>
-                      {items.map((item, idx) => (
-                        <Stack key={idx} spacing={1}>
-                          <Typography variant="body2">{item.content}</Typography>
-                        </Stack>
-                      ))}
-                    </Stack>
+            {Object.keys(apiPermissions[cat][obj]).map((type, typeIndex) => {
+              var items = [];
+              for (var api in apiPermissions[cat][obj][type]) {
+                const apiFunction = apiPermissions[cat][obj][type][api];
+                items.push({
+                  name: apiFunction.Name,
+                  description: getFunctionDescriptionText(apiFunction.Description),
+                });
+              }
+              return (
+                <Stack key={`${type}-${typeIndex}`} spacing={2}>
+                  <Typography variant="h4">{type}</Typography>
+                  <Stack spacing={1}>
+                    {items.map((item, idx) => (
+                      <Stack key={`${type}-${idx}`} direction="row" alignItems="center" spacing={1}>
+                        <Typography variant="body2" sx={{ fontWeight: "bold", flexGrow: 1 }}>
+                          {item.name}
+                        </Typography>
+                        {item.description && (
+                          <Button
+                            size="small"
+                            onClick={() => handleDescriptionClick(item.name, item.description)}
+                            sx={{ minWidth: "auto", p: 0.5 }}
+                          >
+                            <SvgIcon fontSize="small" color="info">
+                              <InformationCircleIcon />
+                            </SvgIcon>
+                          </Button>
+                        )}
+                      </Stack>
+                    ))}
                   </Stack>
-                );
-              });
-              return sections;
+                </Stack>
+              );
             })}
+          </Stack>
+        </CippOffCanvas>
+
+        {/* Description offcanvas */}
+        <CippOffCanvas
+          visible={descriptionOffcanvasVisible}
+          onClose={() => setDescriptionOffcanvasVisible(false)}
+          title="Function Description"
+        >
+          <Stack spacing={2} sx={{ p: 2 }}>
+            <Typography variant="h5" sx={{ fontWeight: "bold" }}>
+              {selectedDescription.name}
+            </Typography>
+            <Typography variant="body1">{selectedDescription.description}</Typography>
           </Stack>
         </CippOffCanvas>
       </Stack>
@@ -478,6 +546,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
                 dataKey: "Results",
                 labelField: "displayName",
                 valueField: "id",
+                showRefresh: true,
               }}
               formControl={formControl}
               fullWidth={true}
@@ -541,10 +610,16 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
                                   Object.keys(apiPermissions[cat][obj]).forEach((type) => {
                                     Object.keys(apiPermissions[cat][obj][type]).forEach(
                                       (apiKey) => {
+                                        const apiFunction = apiPermissions[cat][obj][type][apiKey];
+                                        const descriptionText = getFunctionDescriptionText(
+                                          apiFunction.Description
+                                        );
                                         allEndpoints.push({
-                                          label: apiPermissions[cat][obj][type][apiKey],
-                                          value: apiPermissions[cat][obj][type][apiKey],
-                                          category: cat,
+                                          label: descriptionText
+                                            ? `${apiFunction.Name} - ${descriptionText}`
+                                            : apiFunction.Name,
+                                          value: apiFunction.Name,
+                                          category: `${cat}.${obj}.${type}`,
                                         });
                                       }
                                     );
@@ -577,6 +652,26 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
               </Box>
             </>
           )}
+          <Box sx={{ mb: 3 }}>
+            <CippFormComponent
+              type="autoComplete"
+              name="IPRange"
+              label="Allowed IP Range (Single hosts or CIDR notation)"
+              formControl={formControl}
+              multiple={true}
+              freeSolo={true}
+              creatable={true}
+              options={[]}
+              placeholder="Type in the IP addresses and hit enter"
+              helperText={
+                selectedRole === "superadmin"
+                  ? "IP restrictions are disabled for superadmin role to prevent lockout issues"
+                  : "Leave empty to allow all IP addresses. Supports IPv4/IPv6 in CIDR notation (e.g., 192.168.1.0/24, 2001:db8::/32)"
+              }
+              fullWidth={true}
+              disabled={selectedRole === "superadmin"}
+            />
+          </Box>
           {apiPermissionFetching && (
             <>
               <Typography variant="h5">
@@ -756,7 +851,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
               <h5>Allowed Tenants</h5>
               <ul>
                 {selectedTenant.map((tenant, idx) => (
-                  <li key={idx}>{tenant?.label}</li>
+                  <li key={`allowed-tenant-${idx}`}>{tenant?.label}</li>
                 ))}
               </ul>
             </>
@@ -766,7 +861,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
               <h5>Blocked Tenants</h5>
               <ul>
                 {blockedTenants.map((tenant, idx) => (
-                  <li key={idx}>{tenant?.label}</li>
+                  <li key={`blocked-tenant-${idx}`}>{tenant?.label}</li>
                 ))}
               </ul>
             </>
@@ -776,9 +871,22 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
               <h5>Blocked Endpoints</h5>
               <ul>
                 {blockedEndpoints.map((endpoint, idx) => (
-                  <li key={idx} style={{ fontSize: "0.875rem", marginBottom: "0.25rem" }}>
+                  <li
+                    key={`blocked-endpoint-${idx}`}
+                    style={{ fontSize: "0.875rem", marginBottom: "0.25rem" }}
+                  >
                     {endpoint?.label || endpoint?.value || endpoint}
                   </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {ipRanges?.length > 0 && (
+            <>
+              <h5>Allowed IP Ranges</h5>
+              <ul>
+                {ipRanges.map((ip, idx) => (
+                  <li key={`ip-range-${idx}`}>{ip?.value || ip?.label || ip}</li>
                 ))}
               </ul>
             </>
@@ -791,13 +899,13 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
                   Object.keys(selectedPermissions)
                     ?.sort()
                     .map((cat, idx) => (
-                      <>
+                      <React.Fragment key={`permission-${idx}`}>
                         {selectedPermissions?.[cat] &&
                           typeof selectedPermissions[cat] === "string" &&
                           !selectedPermissions[cat]?.includes("None") && (
-                            <li key={idx}>{selectedPermissions[cat]}</li>
+                            <li>{selectedPermissions[cat]}</li>
                           )}
-                      </>
+                      </React.Fragment>
                     ))}
               </ul>
             </>
@@ -811,7 +919,13 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
           className="me-2"
           type="submit"
           variant="contained"
-          disabled={updatePermissions.isPending || customRoleListFetching || !formState.isValid}
+          disabled={
+            updatePermissions.isPending ||
+            customRoleListFetching ||
+            apiPermissionFetching ||
+            tenantsFetching ||
+            !formState.isValid
+          }
           startIcon={
             <SvgIcon fontSize="small">
               <Save />

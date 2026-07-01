@@ -18,7 +18,7 @@ const CippRoles = () => {
           <PencilIcon />
         </SvgIcon>
       ),
-      link: "/cipp/super-admin/cipp-roles/edit?role=[RoleName]",
+      link: "/cipp/advanced/super-admin/cipp-roles/edit?role=[RoleName]",
     },
     {
       label: "Clone",
@@ -41,9 +41,10 @@ const CippRoles = () => {
           required: true,
           helperText:
             "Enter a name for the new cloned role. This cannot be the same as an existing role.",
+          disableVariables: true,
         },
       ],
-      relatedQueryKeys: ["customRoleList"],
+      relatedQueryKeys: ["customRoleList", "customRoleTable"],
       confirmText: "Are you sure you want to clone this custom role?",
       condition: (row) => row?.Type === "Custom",
     },
@@ -62,7 +63,7 @@ const CippRoles = () => {
         RoleName: "RoleName",
       },
       condition: (row) => row?.Type === "Custom",
-      relatedQueryKeys: ["customRoleList"],
+      relatedQueryKeys: ["customRoleList", "customRoleTable"],
     },
   ];
 
@@ -123,7 +124,7 @@ const CippRoles = () => {
               </SvgIcon>
             }
             component={NextLink}
-            href="/cipp/super-admin/cipp-roles/add"
+            href="/cipp/advanced/super-admin/cipp-roles/add"
           >
             Add Role
           </Button>
